@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Тренажёр гражданства</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;600;700&family=Noto+Sans:wght@400;600;700&display=swap">
 <style>
 :root{
   --bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;
@@ -13,16 +14,19 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#141416;--card:#1f1f22;--ink:#ececef;--muted:#9a9aa1;--line:#34343a;
   --accent:#e2574c;--accent-ink:#fff;--ok:#5cc184;--ok-bg:#16301f;--bad:#f07b70;--bad-bg:#3a1a17;
-  --ru:#8fb3f0;--ru-bg:#1b2538;
+  --ru:#8fb3f0;--ru-bg:#1b2538;color-scheme:dark;
 }}
 :root[data-theme="dark"]{
+  color-scheme:dark;
   --bg:#141416;--card:#1f1f22;--ink:#ececef;--muted:#9a9aa1;--line:#34343a;
   --accent:#e2574c;--accent-ink:#fff;--ok:#5cc184;--ok-bg:#16301f;--bad:#f07b70;--bad-bg:#3a1a17;
   --ru:#8fb3f0;--ru-bg:#1b2538;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI","Noto Sans Georgian","BPG Arial",sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans","Noto Sans Georgian",system-ui,-apple-system,"Segoe UI","BPG Arial",sans-serif}
 .wrap{max-width:760px;margin:0 auto;padding:16px}
+.status{font-size:13px;color:var(--muted);margin-top:8px}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 h1{font-size:20px;margin:4px 0}
 .muted{color:var(--muted)}
@@ -57,7 +61,7 @@ u{text-decoration-thickness:2px;text-underline-offset:3px}
 .list-item:first-child{border-top:0}
 .hidden{display:none}
 input[type=number]{font:inherit;width:70px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
-#tr-pop{position:fixed;z-index:10;display:none}
+#tr-pop{position:fixed;z-index:10;display:none;text-decoration:none;background:var(--accent);color:var(--accent-ink);border-radius:10px;padding:8px 12px;font-size:13px}
 a{color:var(--ru)}
 </style>
 </head>
@@ -70,7 +74,6 @@ a{color:var(--ru)}
     </div>
     <div class="row">
       <button id="ru-toggle" title="Показывать перевод всегда">RU: выкл</button>
-      <button id="theme-toggle" title="Тема">◐</button>
     </div>
   </header>
 
@@ -84,7 +87,7 @@ a{color:var(--ru)}
   <main id="view"></main>
 </div>
 
-<button id="tr-pop" class="primary small">Перевести выделенное ↗</button>
+<a id="tr-pop" target="_blank" rel="noopener" href="#">Перевести выделенное ↗</a>
 
 <script src="questions.js"></script>
 <script>
@@ -104,9 +107,48 @@ const STORE_KEY = 'ge-citizenship-v1';
 function load(){
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
 }
-let S = Object.assign({cards:{}, days:{}, settings:{daily:20, alwaysRu:false, theme:''}}, load());
-S.settings = Object.assign({daily:20, alwaysRu:false, theme:''}, S.settings);
-function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {} }
+let S = Object.assign({cards:{}, days:{}, settings:{daily:20, alwaysRu:false}}, load());
+S.settings = Object.assign({daily:20, alwaysRu:false}, S.settings);
+function save(){
+  S.updated = Date.now();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
+  cloudPush();
+}
+
+// ---------- cloud sync (claude.ai artifact: private per-viewer doc) ----------
+const cloud = {on:false, ref:null, timer:null, writing:null};
+async function cloudInit(){
+  if (!window.claude || !window.claude.use) return;
+  try {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    const uid = db && user ? await user.id() : null;
+    if (!uid) return;
+    cloud.ref = db.doc('data/users/' + uid + '/progress');
+    const snap = await cloud.ref.get();
+    const remote = snap.exists ? JSON.parse(snap.data().state || 'null') : null;
+    cloud.on = true;
+    if (remote && (remote.updated || 0) > (S.updated || 0)) {
+      S = Object.assign({cards:{}, days:{}}, remote);
+      S.settings = Object.assign({daily:20, alwaysRu:false}, remote.settings);
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
+      const tab = document.querySelector('#tabs .on');
+      if (tab && tab.dataset.view === 'home') home(); else header();
+    } else if (S.updated) cloudPush();
+  } catch { cloud.on = false; }
+}
+function cloudPush(){
+  if (!cloud.ref) return;
+  clearTimeout(cloud.timer);
+  cloud.timer = setTimeout(async () => {
+    await cloud.writing;                         // one write at a time
+    cloud.timer = null;
+    const state = JSON.stringify(S);
+    cloud.writing = cloud.ref.set({state, updated: S.updated}).catch(() => {});
+  }, 2500);
+}
+document.addEventListener('visibilitychange', () => {   // flush a pending save when the app is hidden
+  if (document.hidden && cloud.ref && cloud.timer) { clearTimeout(cloud.timer); cloud.writing = cloud.ref.set({state: JSON.stringify(S), updated: S.updated}).catch(() => {}); cloud.timer = null; }
+});
 
 const today = () => new Date().toLocaleDateString('sv'); // YYYY-MM-DD, local
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toLocaleDateString('sv'); };
@@ -158,10 +200,6 @@ function header(){
   document.getElementById('streak').textContent =
     `Серия: ${s} ${s === 1 ? 'день' : (s >= 2 && s <= 4 ? 'дня' : 'дней')} · сегодня отвечено: ${d ? d.n : 0}`;
   document.getElementById('ru-toggle').textContent = 'RU: ' + (S.settings.alwaysRu ? 'вкл' : 'выкл');
-}
-function applyTheme(){
-  if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
-  else delete document.documentElement.dataset.theme;
 }
 
 function ruBlock(text, show){
@@ -384,39 +422,45 @@ function settings(){
     <div class="row" style="margin-top:8px">Вопросов в ежедневной тренировке: <input type="number" id="daily" min="5" max="200" value="${S.settings.daily}"></div>
   </div>
   <div class="card">
-    <b>Резервная копия прогресса</b>
-    <p class="muted small">Прогресс хранится в этом браузере. Чтобы перенести его на другое устройство или не потерять при очистке браузера — скачайте файл и загрузите его там.</p>
-    <div class="row"><button id="exp">Скачать прогресс</button>
-      <label><button id="imp-btn">Загрузить прогресс…</button><input type="file" id="imp" accept=".json" class="hidden"></label></div>
-  </div>
-  <div class="card">
-    <b>Импорт вопросов</b>
-    <p class="muted small">JSON вида <code>{"language":[{"id":"1","q":"…","a":["…","…"],"c":0,"q_ru":"…","a_ru":["…"]}],"history":[…],"law":[…]}</code>. Заменит встроенные вопросы только в этом браузере.</p>
-    <div class="row"><button id="qimp-btn">Загрузить вопросы…</button><input type="file" id="qimp" accept=".json" class="hidden">
-      <button id="qreset">Вернуть встроенные</button></div>
+    <b>Сохранение прогресса</b>
+    <p class="muted small" id="sync-note">${cloud.on ? 'Прогресс сохраняется в вашем аккаунте claude.ai: он один и тот же на телефоне и компьютере, другие люди его не видят.' : 'Прогресс хранится в этом браузере. Чтобы перенести его на другое устройство или не потерять при очистке браузера, скачайте файл и загрузите его там.'}</p>
+    <div class="row"><button id="exp">Скачать копию</button>
+      <button id="imp-btn">Загрузить копию…</button><input type="file" id="imp" accept=".json" class="hidden"></div>
+    <div class="status" id="io-status" role="status"></div>
   </div>
   <div class="card">
     <b>Сброс</b>
     <div class="row" style="margin-top:8px"><button id="reset">Стереть весь прогресс</button></div>
+    <div class="status" id="reset-status" role="status"></div>
   </div>`;
   document.getElementById('daily').onchange = e => { S.settings.daily = Math.max(5, Math.min(200, +e.target.value || 20)); save(); };
-  document.getElementById('exp').onclick = () => {
-    const blob = new Blob([JSON.stringify(S, null, 1)], {type:'application/json'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'progress-' + today() + '.json'; a.click();
+  const io = document.getElementById('io-status');
+  document.getElementById('exp').onclick = async () => {
+    const data = JSON.stringify(S, null, 1), filename = 'progress-' + today() + '.json';
+    const dl = window.claude ? await window.claude.use('downloads').catch(() => null) : null;
+    if (dl) {
+      try { await dl.save({filename, data}); io.textContent = 'Файл сохранён.'; }
+      catch { io.textContent = 'Файл не сохранён.'; }
+      return;
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type:'application/json'}));
+    a.download = filename; a.click();
   };
   document.getElementById('imp-btn').onclick = () => document.getElementById('imp').click();
   document.getElementById('imp').onchange = async e => {
-    try { const d = JSON.parse(await e.target.files[0].text()); if (!d.cards) throw 0; S = d; save(); alert('Прогресс загружен'); home(); }
-    catch { alert('Не получилось прочитать файл'); }
+    try {
+      const d = JSON.parse(await e.target.files[0].text()); if (!d.cards) throw 0;
+      S = Object.assign({cards:{}, days:{}}, d); S.settings = Object.assign({daily:20, alwaysRu:false}, d.settings);
+      save(); io.textContent = 'Прогресс загружен.'; header();
+    } catch { io.textContent = 'Это не файл прогресса тренажёра. Выберите файл progress-….json.'; }
   };
-  document.getElementById('qimp-btn').onclick = () => document.getElementById('qimp').click();
-  document.getElementById('qimp').onchange = async e => {
-    try { const d = JSON.parse(await e.target.files[0].text()); localStorage.setItem(STORE_KEY + '-questions', JSON.stringify(d)); location.reload(); }
-    catch { alert('Не получилось прочитать файл'); }
+  const rb = document.getElementById('reset');
+  rb.onclick = () => {
+    if (!rb.dataset.armed) { rb.dataset.armed = '1'; rb.textContent = 'Нажмите ещё раз, чтобы стереть'; rb.classList.add('primary'); return; }
+    S = {cards:{}, days:{}, settings:S.settings}; save(); header();
+    delete rb.dataset.armed; rb.textContent = 'Стереть весь прогресс'; rb.classList.remove('primary');
+    document.getElementById('reset-status').textContent = 'Прогресс стёрт.';
   };
-  document.getElementById('qreset').onclick = () => { try { localStorage.removeItem(STORE_KEY + '-questions'); } catch {} location.reload(); };
-  document.getElementById('reset').onclick = () => { if (confirm('Точно стереть весь прогресс?')) { S = {cards:{}, days:{}, settings:S.settings}; save(); home(); } };
 }
 
 // ---------- translate selection ----------
@@ -428,11 +472,10 @@ document.addEventListener('selectionchange', () => {
   pop.style.display = 'block';
   pop.style.left = Math.max(8, Math.min(innerWidth - 220, r.left)) + 'px';
   pop.style.top = (r.bottom + 8 > innerHeight - 50 ? r.top - 44 : r.bottom + 8) + 'px';
-  pop.onclick = () => window.open(gt(t), '_blank', 'noopener');
+  pop.href = gt(t);
 });
 
 // ---------- init ----------
-try { const custom = JSON.parse(localStorage.getItem(STORE_KEY + '-questions')); if (custom) Object.assign(Q, custom); } catch {}
 document.getElementById('tabs').onclick = e => {
   const v = e.target.dataset.view; if (!v) return;
   ({home, browse, mistakes, settings})[v]();
@@ -441,11 +484,6 @@ document.getElementById('ru-toggle').onclick = () => {
   S.settings.alwaysRu = !S.settings.alwaysRu; save(); header();
   view.querySelectorAll('.ru, .ru-inline').forEach(e => e.classList.toggle('hidden', !S.settings.alwaysRu));
 };
-document.getElementById('theme-toggle').onclick = () => {
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const cur = S.settings.theme || (dark ? 'dark' : 'light');
-  S.settings.theme = cur === 'dark' ? 'light' : 'dark'; save(); applyTheme();
-};
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   const opts = [...view.querySelectorAll('.opt:not(:disabled)')];
@@ -453,8 +491,8 @@ document.addEventListener('keydown', e => {
   const nb = document.getElementById('nextq');
   if (e.key === 'Enter' && nb && !nb.classList.contains('hidden') && document.activeElement !== nb) nb.click();
 });
-applyTheme();
 home();
+cloudInit();
 })();
 </script>
 </body>
