@@ -47,6 +47,8 @@ u{text-decoration-thickness:2px;text-underline-offset:3px}
 .opt.ok{background:var(--ok-bg);border-color:var(--ok);color:var(--ink)}
 .opt.bad{background:var(--bad-bg);border-color:var(--bad);color:var(--ink)}
 .opt .ru{margin:6px 0 0}
+.opt:disabled{opacity:1;cursor:default}
+.opt:disabled:not(.ok):not(.bad){color:var(--muted)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .spacer{flex:1}
 .pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
@@ -95,7 +97,7 @@ const SUBJECTS = [
   {key:'law',      ka:'სამართლის საფუძვლები', ru:'Основы права'},
 ];
 const Q = window.QUESTIONS || {};
-const INTERVALS = [0, 1, 3, 7, 14, 30, 60]; // days per Leitner box
+const INTERVALS = [1, 1, 3, 7, 14, 30, 60]; // days until next review, per Leitner box
 const STORE_KEY = 'ge-citizenship-v1';
 
 // ---------- storage ----------
@@ -121,7 +123,7 @@ function record(subj, q, correct){
   c.seen++; c.last = today();
   if (correct){ c.right++; c.box = Math.min(c.box + 1, INTERVALS.length - 1); }
   else { c.wrong++; c.box = 0; c.lastWrong = today(); }
-  c.due = addDays(today(), INTERVALS[c.box]);
+  c.due = addDays(today(), INTERVALS[c.box]); // a miss is re-drilled in-session, then again tomorrow
   const d = S.days[today()] || (S.days[today()] = {n:0, ok:0});
   d.n++; if (correct) d.ok++;
   save();

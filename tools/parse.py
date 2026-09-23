@@ -22,6 +22,20 @@ def lines_of(path):
         out += clean
     return out
 
+# words the PDF text layer split with a stray space
+SPLIT_WORDS = ['აირჩე ვა', 'საქართვე ლოს', 'უმრავლესობი ს', 'თანამდებობ ა', 'შემთხვევა ში',
+               'გადაწყვეტილ ებას', 'ასე თი', 'მომსახურების ათვის', 'სა ხელმწიფოს', 'შ ემთხვევაში']
+
+def tidy(t):
+    t = re.sub(r'[ \t]+', ' ', t).strip()
+    for w in SPLIT_WORDS:
+        t = t.replace(w, w.replace(' ', ''))
+    t = re.sub(r' +([,.;:!?])', r'\1', t)          # "word ," -> "word,"
+    t = re.sub(r'(?<=[ა-ჰ]) ?- (?=მინისტრ)|(?<=[ა-ჰ]) -(?=[ა-ჰ])', '-', t)  # "პრემიერ -მინისტრი"
+    t = re.sub(r'„ +', '„', t)
+    t = re.sub(r'^„(?!.*“)', '', t)                    # unmatched opening quote
+    return t.strip()
+
 GLUED = re.compile(r'^(.*\S)\s{3,}((?:I|II|III)\.\d+\.\d+\.?\s*[-–]\s*[აბგდ]\)?)\s*$')
 
 def split_glued(lines):
@@ -87,8 +101,8 @@ def parse(path, kind):
                 text += p
             else:
                 text += ' ' + p
-        q['q'] = re.sub(r'[ \t]+', ' ', text).strip()
-        q['a'] = [re.sub(r'\s+', ' ', a).strip().rstrip(';.').strip() for a in q['a']]
+        q['q'] = tidy(text)
+        q['a'] = [tidy(a).rstrip(';.').strip() for a in q['a']]
         if len(q['a']) != 4:
             print('options', q['id'], len(q['a']), file=sys.stderr)
     if kind == 'language':
