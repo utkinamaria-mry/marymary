@@ -9,18 +9,18 @@
 :root{
   --bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;
   --accent:#b3261e;--accent-ink:#fff;--ok:#1f7a3f;--ok-bg:#e5f4ea;--bad:#b3261e;--bad-bg:#fbe9e7;
-  --ru:#2b5aa8;--ru-bg:#eaf0fb;
+  --ru:#2b5aa8;--ru-bg:#eaf0fb;--note-bg:#fbf3e4;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#141416;--card:#1f1f22;--ink:#ececef;--muted:#9a9aa1;--line:#34343a;
   --accent:#e2574c;--accent-ink:#fff;--ok:#5cc184;--ok-bg:#16301f;--bad:#f07b70;--bad-bg:#3a1a17;
-  --ru:#8fb3f0;--ru-bg:#1b2538;color-scheme:dark;
+  --ru:#8fb3f0;--ru-bg:#1b2538;--note-bg:#2a2418;color-scheme:dark;
 }}
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#141416;--card:#1f1f22;--ink:#ececef;--muted:#9a9aa1;--line:#34343a;
   --accent:#e2574c;--accent-ink:#fff;--ok:#5cc184;--ok-bg:#16301f;--bad:#f07b70;--bad-bg:#3a1a17;
-  --ru:#8fb3f0;--ru-bg:#1b2538;
+  --ru:#8fb3f0;--ru-bg:#1b2538;--note-bg:#2a2418;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans","Noto Sans Georgian",system-ui,-apple-system,"Segoe UI","BPG Arial",sans-serif}
@@ -52,6 +52,11 @@ u{text-decoration-thickness:2px;text-underline-offset:3px}
 .opt.bad{background:var(--bad-bg);border-color:var(--bad);color:var(--ink)}
 .opt .ru{margin:6px 0 0}
 .opt:disabled{opacity:1;cursor:default}
+.note{border-left:3px solid var(--accent);background:var(--note-bg);border-radius:0 10px 10px 0;padding:10px 12px;margin:12px 0 4px;font-size:15px}
+.note .src{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.note .mem{margin-top:6px;color:var(--ink)}
+.note .mem b{color:var(--accent)}
+.list-item .note{font-size:14px;margin-top:8px}
 .opt:disabled:not(.ok):not(.bad){color:var(--muted)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .spacer{flex:1}
@@ -202,6 +207,11 @@ function header(){
   document.getElementById('ru-toggle').textContent = 'RU: ' + (S.settings.alwaysRu ? 'вкл' : 'выкл');
 }
 
+function noteBlock(q){
+  const x = q.x; if (!x) return '';
+  return `<div class="note"><div class="src">${esc(x.src ? (/^(Ст|Гл)\./.test(x.src) ? 'Конституция Грузии · ' + x.src : x.src) : 'Историческая справка')}</div><div>${esc(x.note)}</div>${x.mem ? `<div class="mem"><b>Запомнить:</b> ${esc(x.mem)}</div>` : ''}</div>`;
+}
+
 function ruBlock(text, show){
   if (!text) return '';
   return `<div class="ru ${show ? '' : 'hidden'}">${fmt(text)}</div>`;
@@ -309,6 +319,7 @@ function run(sess){
       <span class="pill">${SUBJECTS.find(s => s.key === k).ru} · №${esc(q.id)}</span>${q.topic ? ` <span class="pill">${esc(q.topic)}</span>` : ''}
       <div class="q" lang="ka">${fmt(q.q)}${ruBlock(q.q_ru, showRu)}</div>
       <div id="opts">${order.map(j => `<button class="opt" data-j="${j}" lang="ka">${esc(q.a[j])}${ruBlock(q.a_ru && q.a_ru[j], showRu)}</button>`).join('')}</div>
+      <div id="note-slot"></div>
       <div class="row" style="margin-top:10px">
         ${hasRu ? `<button id="ru-one">🇷🇺 Перевод</button>` : ''}
         <a class="small" target="_blank" rel="noopener" href="${gt(plain(q.q) + '\n\n' + q.a.map((x, n) => (n + 1) + ') ' + x).join('\n'))}">Google Переводчик ↗</a>
@@ -337,6 +348,7 @@ function run(sess){
       }
       if (!correct && sess.mode === 'train') sess.items.push({k, q}); // re-ask at end of session
       if (!correct) view.querySelectorAll('.ru').forEach(e => e.classList.remove('hidden'));
+      document.getElementById('note-slot').innerHTML = noteBlock(q);
       const nb = document.getElementById('nextq');
       nb.classList.remove('hidden'); nb.focus();
       nb.onclick = () => { sess.i++; next(); };
@@ -359,7 +371,7 @@ function finish(sess, quit){
     html += `<h3 style="font-size:16px">Ошибки</h3>` + wrong.map(x => `<div class="list-item">
       <div lang="ka" style="white-space:pre-line"><b>${fmt(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru" style="white-space:pre-line">${fmt(x.q.q_ru)}</div>` : ''}
       <div class="small">Ваш ответ: <span style="color:var(--bad)" lang="ka">${esc(x.q.a[x.picked])}</span></div>
-      <div class="small">Правильно: <span style="color:var(--ok)" lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>
+      <div class="small">Правильно: <span style="color:var(--ok)" lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>${noteBlock(x.q)}
     </div>`).join('');
   }
   html += `<div class="row" style="margin-top:12px"><button class="primary" data-home>На главную</button></div></div>`;
@@ -385,7 +397,7 @@ function mistakes(){
       <div class="row small muted"><span class="pill">${SUBJECTS.find(s => s.key === x.k).ru} · №${esc(x.q.id)}</span>
       <span>ошибок: ${x.c.wrong}, верно: ${x.c.right}</span>${x.c.box >= 3 ? '<span class="pill" style="color:var(--ok)">выучено</span>' : ''}</div>
       <div lang="ka" style="white-space:pre-line"><b>${fmt(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru" style="white-space:pre-line">${fmt(x.q.q_ru)}</div>` : ''}
-      <div class="small">✓ <span lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>
+      <div class="small">✓ <span lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>${noteBlock(x.q)}
     </div>`).join('') : '<span class="muted">Ошибок пока нет.</span>') + `</div>`;
   view.innerHTML = html;
   const d = document.getElementById('drill');
@@ -407,7 +419,7 @@ function browse(){
       return `<div class="list-item">
       <div class="row small muted"><span class="pill">№${esc(q.id)}</span>${q.topic ? `<span class="pill">${esc(q.topic)}</span>` : ''}${c && c.seen ? `<span>верно ${c.right} / ошибок ${c.wrong}</span>` : '<span>ещё не отвечали</span>'}</div>
       <div lang="ka" style="white-space:pre-line"><b>${fmt(q.q)}</b></div>${ruBlock(q.q_ru, S.settings.alwaysRu)}
-      <ol class="small" style="margin:6px 0 0;padding-left:20px">${q.a.map((a, j) => `<li style="${j === q.c ? 'color:var(--ok);font-weight:600' : ''}"><span lang="ka">${esc(a)}</span>${q.a_ru && q.a_ru[j] ? `<span class="ru-inline ${S.settings.alwaysRu ? '' : 'hidden'} muted"> — ${esc(q.a_ru[j])}</span>` : ''}</li>`).join('')}</ol>
+      <ol class="small" style="margin:6px 0 0;padding-left:20px">${q.a.map((a, j) => `<li style="${j === q.c ? 'color:var(--ok);font-weight:600' : ''}"><span lang="ka">${esc(a)}</span>${q.a_ru && q.a_ru[j] ? `<span class="ru-inline ${S.settings.alwaysRu ? '' : 'hidden'} muted"> — ${esc(q.a_ru[j])}</span>` : ''}</li>`).join('')}</ol>${noteBlock(q)}
     </div>`;}).join('') || '<span class="muted">Нет вопросов.</span>'}</div>`;
   view.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { browseSubj = b.dataset.s; browse(); });
   const f = document.getElementById('flt');
@@ -427,6 +439,10 @@ function settings(){
     <div class="row"><button id="exp">Скачать копию</button>
       <button id="imp-btn">Загрузить копию…</button><input type="file" id="imp" accept=".json" class="hidden"></div>
     <div class="status" id="io-status" role="status"></div>
+  </div>
+  <div class="card">
+    <b>О справках</b>
+    <p class="muted small">Правильные ответы взяты из официальных тестов SDA 2024 года. Исторические справки, пояснения к праву и подсказки для запоминания написал Claude. Номера статей указаны по действующей редакции Конституции Грузии; точный текст есть на matsne.gov.ge.</p>
   </div>
   <div class="card">
     <b>Сброс</b>
