@@ -39,7 +39,9 @@ button:disabled{opacity:.45;cursor:default}
 .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;display:flex}
 .bar i{display:block;height:100%}
 .stat{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
-.q{font-size:18px;font-weight:600;margin:4px 0 12px}
+.q{font-size:18px;font-weight:600;margin:4px 0 12px;white-space:pre-line}
+.q .ru{white-space:pre-line}
+u{text-decoration-thickness:2px;text-underline-offset:3px}
 .ru{background:var(--ru-bg);color:var(--ru);border-radius:8px;padding:6px 10px;margin:6px 0;font-size:15px;font-weight:400}
 .opt{display:block;width:100%;text-align:left;margin:8px 0;padding:12px 14px;border-radius:10px}
 .opt.ok{background:var(--ok-bg);border-color:var(--ok);color:var(--ink)}
@@ -110,6 +112,8 @@ const uid = (subj, q) => subj + ':' + q.id;
 const card = id => S.cards[id] || (S.cards[id] = {box:0, due:null, seen:0, right:0, wrong:0, last:null});
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = s => esc(s).replace(/__(.+?)__/g, '<u>$1</u>'); // __word__ = underlined in the original
+const plain = s => String(s ?? '').replace(/__/g, '');
 const gt = text => 'https://translate.google.com/?sl=ka&tl=ru&op=translate&text=' + encodeURIComponent(text);
 
 function record(subj, q, correct){
@@ -160,7 +164,7 @@ function applyTheme(){
 
 function ruBlock(text, show){
   if (!text) return '';
-  return `<div class="ru ${show ? '' : 'hidden'}">${esc(text)}</div>`;
+  return `<div class="ru ${show ? '' : 'hidden'}">${fmt(text)}</div>`;
 }
 
 // ---------- home ----------
@@ -262,12 +266,12 @@ function run(sess){
       <div class="row small muted"><span>${esc(sess.title)}</span><span class="spacer"></span>
         <span>${Math.min(sess.i + 1, total)} / ${total}${sess.items.length > total ? ' (+' + (sess.items.length - total) + ' повтор)' : ''}</span></div>
       <div class="bar" style="margin:8px 0 14px"><i style="width:${sess.i / sess.items.length * 100}%;background:var(--accent)"></i></div>
-      <span class="pill">${SUBJECTS.find(s => s.key === k).ru} · №${esc(q.id)}</span>
-      <div class="q" lang="ka">${esc(q.q)}${ruBlock(q.q_ru, showRu)}</div>
+      <span class="pill">${SUBJECTS.find(s => s.key === k).ru} · №${esc(q.id)}</span>${q.topic ? ` <span class="pill">${esc(q.topic)}</span>` : ''}
+      <div class="q" lang="ka">${fmt(q.q)}${ruBlock(q.q_ru, showRu)}</div>
       <div id="opts">${order.map(j => `<button class="opt" data-j="${j}" lang="ka">${esc(q.a[j])}${ruBlock(q.a_ru && q.a_ru[j], showRu)}</button>`).join('')}</div>
       <div class="row" style="margin-top:10px">
         ${hasRu ? `<button id="ru-one">🇷🇺 Перевод</button>` : ''}
-        <a class="small" target="_blank" rel="noopener" href="${gt(q.q + '\n\n' + q.a.map((x, n) => (n + 1) + ') ' + x).join('\n'))}">Google Переводчик ↗</a>
+        <a class="small" target="_blank" rel="noopener" href="${gt(plain(q.q) + '\n\n' + q.a.map((x, n) => (n + 1) + ') ' + x).join('\n'))}">Google Переводчик ↗</a>
         <span class="spacer"></span>
         <button id="quit">Выйти</button>
         <button id="nextq" class="primary hidden">Дальше →</button>
@@ -313,7 +317,7 @@ function finish(sess, quit){
   const wrong = sess.log.filter(x => !x.correct);
   if (wrong.length){
     html += `<h3 style="font-size:16px">Ошибки</h3>` + wrong.map(x => `<div class="list-item">
-      <div lang="ka"><b>${esc(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru">${esc(x.q.q_ru)}</div>` : ''}
+      <div lang="ka" style="white-space:pre-line"><b>${fmt(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru" style="white-space:pre-line">${fmt(x.q.q_ru)}</div>` : ''}
       <div class="small">Ваш ответ: <span style="color:var(--bad)" lang="ka">${esc(x.q.a[x.picked])}</span></div>
       <div class="small">Правильно: <span style="color:var(--ok)" lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>
     </div>`).join('');
@@ -340,7 +344,7 @@ function mistakes(){
   html += `<div class="card">` + (list.length ? list.map(x => `<div class="list-item">
       <div class="row small muted"><span class="pill">${SUBJECTS.find(s => s.key === x.k).ru} · №${esc(x.q.id)}</span>
       <span>ошибок: ${x.c.wrong}, верно: ${x.c.right}</span>${x.c.box >= 3 ? '<span class="pill" style="color:var(--ok)">выучено</span>' : ''}</div>
-      <div lang="ka"><b>${esc(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru">${esc(x.q.q_ru)}</div>` : ''}
+      <div lang="ka" style="white-space:pre-line"><b>${fmt(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru" style="white-space:pre-line">${fmt(x.q.q_ru)}</div>` : ''}
       <div class="small">✓ <span lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>
     </div>`).join('') : '<span class="muted">Ошибок пока нет.</span>') + `</div>`;
   view.innerHTML = html;
@@ -361,8 +365,8 @@ function browse(){
     <div class="card">${list.map(q => {
       const c = S.cards[uid(browseSubj, q)];
       return `<div class="list-item">
-      <div class="row small muted"><span class="pill">№${esc(q.id)}</span>${c && c.seen ? `<span>верно ${c.right} / ошибок ${c.wrong}</span>` : '<span>ещё не отвечали</span>'}</div>
-      <div lang="ka"><b>${esc(q.q)}</b></div>${ruBlock(q.q_ru, S.settings.alwaysRu)}
+      <div class="row small muted"><span class="pill">№${esc(q.id)}</span>${q.topic ? `<span class="pill">${esc(q.topic)}</span>` : ''}${c && c.seen ? `<span>верно ${c.right} / ошибок ${c.wrong}</span>` : '<span>ещё не отвечали</span>'}</div>
+      <div lang="ka" style="white-space:pre-line"><b>${fmt(q.q)}</b></div>${ruBlock(q.q_ru, S.settings.alwaysRu)}
       <ol class="small" style="margin:6px 0 0;padding-left:20px">${q.a.map((a, j) => `<li style="${j === q.c ? 'color:var(--ok);font-weight:600' : ''}"><span lang="ka">${esc(a)}</span>${q.a_ru && q.a_ru[j] ? `<span class="ru-inline ${S.settings.alwaysRu ? '' : 'hidden'} muted"> — ${esc(q.a_ru[j])}</span>` : ''}</li>`).join('')}</ol>
     </div>`;}).join('') || '<span class="muted">Нет вопросов.</span>'}</div>`;
   view.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { browseSubj = b.dataset.s; browse(); });
