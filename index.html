@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тренажёр гражданства</title>
+<style>
+:root{
+  --bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e3e1dc;
+  --accent:#b3261e;--accent-ink:#fff;--ok:#1f7a3f;--ok-bg:#e5f4ea;--bad:#b3261e;--bad-bg:#fbe9e7;
+  --ru:#2b5aa8;--ru-bg:#eaf0fb;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141416;--card:#1f1f22;--ink:#ececef;--muted:#9a9aa1;--line:#34343a;
+  --accent:#e2574c;--accent-ink:#fff;--ok:#5cc184;--ok-bg:#16301f;--bad:#f07b70;--bad-bg:#3a1a17;
+  --ru:#8fb3f0;--ru-bg:#1b2538;
+}}
+:root[data-theme="dark"]{
+  --bg:#141416;--card:#1f1f22;--ink:#ececef;--muted:#9a9aa1;--line:#34343a;
+  --accent:#e2574c;--accent-ink:#fff;--ok:#5cc184;--ok-bg:#16301f;--bad:#f07b70;--bad-bg:#3a1a17;
+  --ru:#8fb3f0;--ru-bg:#1b2538;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI","Noto Sans Georgian","BPG Arial",sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+h1{font-size:20px;margin:4px 0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+nav.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 14px}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:disabled{opacity:.45;cursor:default}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.subj h3{margin:0 0 6px;font-size:16px}
+.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.stat{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.q{font-size:18px;font-weight:600;margin:4px 0 12px}
+.ru{background:var(--ru-bg);color:var(--ru);border-radius:8px;padding:6px 10px;margin:6px 0;font-size:15px;font-weight:400}
+.opt{display:block;width:100%;text-align:left;margin:8px 0;padding:12px 14px;border-radius:10px}
+.opt.ok{background:var(--ok-bg);border-color:var(--ok);color:var(--ink)}
+.opt.bad{background:var(--bad-bg);border-color:var(--bad);color:var(--ink)}
+.opt .ru{margin:6px 0 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.spacer{flex:1}
+.pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.result{font-size:28px;font-weight:700}
+.list-item{border-top:1px solid var(--line);padding:10px 0}
+.list-item:first-child{border-top:0}
+.hidden{display:none}
+input[type=number]{font:inherit;width:70px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+#tr-pop{position:fixed;z-index:10;display:none}
+a{color:var(--ru)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🇬🇪 Тренажёр: гражданство Грузии</h1>
+      <div class="muted small" id="streak"></div>
+    </div>
+    <div class="row">
+      <button id="ru-toggle" title="Показывать перевод всегда">RU: выкл</button>
+      <button id="theme-toggle" title="Тема">◐</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-view="home" class="on">Главная</button>
+    <button data-view="browse">Все вопросы</button>
+    <button data-view="mistakes">Мои ошибки</button>
+    <button data-view="settings">Настройки</button>
+  </nav>
+
+  <main id="view"></main>
+</div>
+
+<button id="tr-pop" class="primary small">Перевести выделенное ↗</button>
+
+<script src="questions.js"></script>
+<script>
+(() => {
+'use strict';
+
+const SUBJECTS = [
+  {key:'language', ka:'ქართული ენა', ru:'Грузинский язык'},
+  {key:'history',  ka:'საქართველოს ისტორია', ru:'История Грузии'},
+  {key:'law',      ka:'სამართლის საფუძვლები', ru:'Основы права'},
+];
+const Q = window.QUESTIONS || {};
+const INTERVALS = [0, 1, 3, 7, 14, 30, 60]; // days per Leitner box
+const STORE_KEY = 'ge-citizenship-v1';
+
+// ---------- storage ----------
+function load(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
+}
+let S = Object.assign({cards:{}, days:{}, settings:{daily:20, alwaysRu:false, theme:''}}, load());
+S.settings = Object.assign({daily:20, alwaysRu:false, theme:''}, S.settings);
+function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {} }
+
+const today = () => new Date().toLocaleDateString('sv'); // YYYY-MM-DD, local
+const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toLocaleDateString('sv'); };
+const uid = (subj, q) => subj + ':' + q.id;
+const card = id => S.cards[id] || (S.cards[id] = {box:0, due:null, seen:0, right:0, wrong:0, last:null});
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gt = text => 'https://translate.google.com/?sl=ka&tl=ru&op=translate&text=' + encodeURIComponent(text);
+
+function record(subj, q, correct){
+  const c = card(uid(subj, q));
+  c.seen++; c.last = today();
+  if (correct){ c.right++; c.box = Math.min(c.box + 1, INTERVALS.length - 1); }
+  else { c.wrong++; c.box = 0; c.lastWrong = today(); }
+  c.due = addDays(today(), INTERVALS[c.box]);
+  const d = S.days[today()] || (S.days[today()] = {n:0, ok:0});
+  d.n++; if (correct) d.ok++;
+  save();
+}
+
+function subjStats(key){
+  const list = Q[key] || [];
+  let fresh = 0, learning = 0, known = 0, due = 0;
+  for (const q of list){
+    const c = S.cards[uid(key, q)];
+    if (!c || !c.seen) { fresh++; continue; }
+    if (c.box >= 3) known++; else learning++;
+    if (c.due && c.due <= today()) due++;
+  }
+  return {total:list.length, fresh, learning, known, due};
+}
+
+function streak(){
+  let n = 0, d = today();
+  if (!S.days[d]) d = addDays(d, -1);
+  while (S.days[d]) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+// ---------- ui helpers ----------
+const view = document.getElementById('view');
+function setTab(name){
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === name));
+}
+function header(){
+  const s = streak(), d = S.days[today()];
+  document.getElementById('streak').textContent =
+    `Серия: ${s} ${s === 1 ? 'день' : (s >= 2 && s <= 4 ? 'дня' : 'дней')} · сегодня отвечено: ${d ? d.n : 0}`;
+  document.getElementById('ru-toggle').textContent = 'RU: ' + (S.settings.alwaysRu ? 'вкл' : 'выкл');
+}
+function applyTheme(){
+  if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
+  else delete document.documentElement.dataset.theme;
+}
+
+function ruBlock(text, show){
+  if (!text) return '';
+  return `<div class="ru ${show ? '' : 'hidden'}">${esc(text)}</div>`;
+}
+
+// ---------- home ----------
+function home(){
+  setTab('home'); header();
+  const noData = SUBJECTS.every(s => !(Q[s.key] || []).length);
+  let html = '';
+  if (noData){
+    html += `<div class="card"><b>Вопросы ещё не загружены.</b><p class="muted">Файл <code>questions.js</code> пуст. Импортируйте вопросы в «Настройках».</p></div>`;
+  }
+  html += `<div class="grid">`;
+  for (const s of SUBJECTS){
+    const st = subjStats(s.key);
+    const pct = x => st.total ? (x / st.total * 100) : 0;
+    html += `<div class="card subj">
+      <h3>${s.ru}</h3><div class="muted small">${s.ka}</div>
+      <div class="bar" style="margin:10px 0 6px">
+        <i style="width:${pct(st.known)}%;background:var(--ok)"></i>
+        <i style="width:${pct(st.learning)}%;background:#d9a13b"></i>
+      </div>
+      <div class="stat"><span>выучено ${st.known}</span><span>учу ${st.learning}</span><span>новых ${st.fresh}</span></div>
+      <div class="stat" style="margin-bottom:10px"><span>всего ${st.total}</span><span>к повторению сегодня: <b>${st.due}</b></span></div>
+      <div class="row">
+        <button class="primary" data-train="${s.key}" ${st.total ? '' : 'disabled'}>Тренировка</button>
+        <button data-exam="${s.key}" ${st.total >= 10 ? '' : 'disabled'}>Экзамен 10</button>
+      </div>
+    </div>`;
+  }
+  html += `</div>
+  <div class="card">
+    <div class="row"><b>Ежедневная тренировка по всем трём</b><span class="spacer"></span>
+      <button class="primary" data-train="all" ${noData ? 'disabled' : ''}>Начать</button></div>
+    <p class="muted small" style="margin:8px 0 0">Сначала вопросы, которые пора повторить (интервалы 1 → 3 → 7 → 14 → 30 → 60 дней), затем новые — до ${S.settings.daily} за сессию. Ошибка возвращает вопрос в начало и повторяет его в этой же сессии.</p>
+  </div>
+  <div class="card">
+    <b>Последние 14 дней</b>
+    <div class="row" style="margin-top:8px;gap:4px;align-items:flex-end;height:60px">${last14()}</div>
+  </div>`;
+  view.innerHTML = html;
+  view.querySelectorAll('[data-train]').forEach(b => b.onclick = () => startTraining(b.dataset.train));
+  view.querySelectorAll('[data-exam]').forEach(b => b.onclick = () => startExam(b.dataset.exam));
+}
+function last14(){
+  const days = []; for (let i = 13; i >= 0; i--) days.push(addDays(today(), -i));
+  const max = Math.max(10, ...days.map(d => S.days[d]?.n || 0));
+  return days.map(d => {
+    const x = S.days[d] || {n:0, ok:0};
+    const h = x.n / max * 56;
+    return `<div title="${d}: ${x.n} ответов, ${x.ok} верно" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:56px">
+      <div style="height:${h - x.ok / max * 56}px;background:var(--bad);opacity:.6;border-radius:3px 3px 0 0"></div>
+      <div style="height:${x.ok / max * 56}px;background:var(--ok);border-radius:${x.n === x.ok ? '3px 3px 0 0' : '0'}"></div></div>`;
+  }).join('');
+}
+
+// ---------- session (training & exam share a runner) ----------
+function buildTraining(key){
+  const keys = key === 'all' ? SUBJECTS.map(s => s.key) : [key];
+  const due = [], fresh = [];
+  for (const k of keys) for (const q of (Q[k] || [])){
+    const c = S.cards[uid(k, q)];
+    if (!c || !c.seen) fresh.push({k, q});
+    else if (c.due <= today()) due.push({k, q, box:c.box});
+  }
+  due.sort((a, b) => a.box - b.box);
+  const limit = S.settings.daily;
+  let items = shuffle(due).slice(0, limit);
+  if (items.length < limit) items = items.concat(shuffle(fresh).slice(0, limit - items.length));
+  return shuffle(items);
+}
+
+function startTraining(key){
+  const items = buildTraining(key);
+  if (!items.length){
+    view.innerHTML = `<div class="card"><b>На сегодня всё повторено 🎉</b><p class="muted">Новых вопросов не осталось, а повторения запланированы на следующие дни. Можно пройти экзамен или разобрать ошибки.</p><button data-home>На главную</button></div>`;
+    view.querySelector('[data-home]').onclick = home; return;
+  }
+  run({items, mode:'train', title: key === 'all' ? 'Ежедневная тренировка' : SUBJECTS.find(s => s.key === key).ru});
+}
+
+function startExam(key){
+  const items = shuffle((Q[key] || []).map(q => ({k:key, q}))).slice(0, 10);
+  run({items, mode:'exam', title:'Экзамен: ' + SUBJECTS.find(s => s.key === key).ru});
+}
+
+function startMistakes(list){
+  run({items: shuffle(list), mode:'train', title:'Работа над ошибками'});
+}
+
+function run(sess){
+  sess.i = 0; sess.ok = 0; sess.log = []; sess.firstTry = new Set();
+  const total = sess.items.length;
+  const next = () => {
+    if (sess.i >= sess.items.length) return finish(sess);
+    const {k, q} = sess.items[sess.i];
+    const showRu = S.settings.alwaysRu;
+    const order = shuffle(q.a.map((_, j) => j));
+    const hasRu = q.q_ru || (q.a_ru && q.a_ru.some(Boolean));
+    view.innerHTML = `<div class="card">
+      <div class="row small muted"><span>${esc(sess.title)}</span><span class="spacer"></span>
+        <span>${Math.min(sess.i + 1, total)} / ${total}${sess.items.length > total ? ' (+' + (sess.items.length - total) + ' повтор)' : ''}</span></div>
+      <div class="bar" style="margin:8px 0 14px"><i style="width:${sess.i / sess.items.length * 100}%;background:var(--accent)"></i></div>
+      <span class="pill">${SUBJECTS.find(s => s.key === k).ru} · №${esc(q.id)}</span>
+      <div class="q" lang="ka">${esc(q.q)}${ruBlock(q.q_ru, showRu)}</div>
+      <div id="opts">${order.map(j => `<button class="opt" data-j="${j}" lang="ka">${esc(q.a[j])}${ruBlock(q.a_ru && q.a_ru[j], showRu)}</button>`).join('')}</div>
+      <div class="row" style="margin-top:10px">
+        ${hasRu ? `<button id="ru-one">🇷🇺 Перевод</button>` : ''}
+        <a class="small" target="_blank" rel="noopener" href="${gt(q.q + '\n\n' + q.a.map((x, n) => (n + 1) + ') ' + x).join('\n'))}">Google Переводчик ↗</a>
+        <span class="spacer"></span>
+        <button id="quit">Выйти</button>
+        <button id="nextq" class="primary hidden">Дальше →</button>
+      </div>
+    </div>`;
+    const ru1 = document.getElementById('ru-one');
+    if (ru1) ru1.onclick = () => view.querySelectorAll('.ru').forEach(e => e.classList.toggle('hidden'));
+    document.getElementById('quit').onclick = () => finish(sess, true);
+    view.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+      const j = +b.dataset.j, correct = j === q.c;
+      view.querySelectorAll('.opt').forEach(x => {
+        x.disabled = true;
+        if (+x.dataset.j === q.c) x.classList.add('ok');
+      });
+      if (!correct) b.classList.add('bad');
+      const id = uid(k, q);
+      const first = !sess.firstTry.has(id);
+      sess.firstTry.add(id);
+      if (first){
+        record(k, q, correct);
+        if (correct) sess.ok++;
+        sess.log.push({k, q, correct, picked:j});
+      }
+      if (!correct && sess.mode === 'train') sess.items.push({k, q}); // re-ask at end of session
+      if (!correct) view.querySelectorAll('.ru').forEach(e => e.classList.remove('hidden'));
+      const nb = document.getElementById('nextq');
+      nb.classList.remove('hidden'); nb.focus();
+      nb.onclick = () => { sess.i++; next(); };
+      header();
+    });
+  };
+  next();
+}
+
+function finish(sess, quit){
+  const n = sess.log.length;
+  let html = `<div class="card"><div class="muted">${esc(sess.title)}${quit ? ' (прервано)' : ''}</div>
+    <div class="result">${sess.ok} / ${n}</div>`;
+  if (sess.mode === 'exam' && !quit){
+    const pass = sess.ok >= 7;
+    html += `<p style="color:${pass ? 'var(--ok)' : 'var(--bad)'};font-weight:600">${pass ? 'Сдано ✓' : 'Не сдано ✗'} <span class="muted small">(на экзамене нужно 7 из 10)</span></p>`;
+  }
+  const wrong = sess.log.filter(x => !x.correct);
+  if (wrong.length){
+    html += `<h3 style="font-size:16px">Ошибки</h3>` + wrong.map(x => `<div class="list-item">
+      <div lang="ka"><b>${esc(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru">${esc(x.q.q_ru)}</div>` : ''}
+      <div class="small">Ваш ответ: <span style="color:var(--bad)" lang="ka">${esc(x.q.a[x.picked])}</span></div>
+      <div class="small">Правильно: <span style="color:var(--ok)" lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>
+    </div>`).join('');
+  }
+  html += `<div class="row" style="margin-top:12px"><button class="primary" data-home>На главную</button></div></div>`;
+  view.innerHTML = html;
+  view.querySelector('[data-home]').onclick = home;
+  header();
+}
+
+// ---------- mistakes ----------
+function mistakes(){
+  setTab('mistakes'); header();
+  const list = [];
+  for (const s of SUBJECTS) for (const q of (Q[s.key] || [])){
+    const c = S.cards[uid(s.key, q)];
+    if (c && c.wrong) list.push({k:s.key, q, c});
+  }
+  list.sort((a, b) => (a.c.box - b.c.box) || (b.c.wrong - a.c.wrong));
+  const active = list.filter(x => x.c.box < 3);
+  let html = `<div class="card"><div class="row"><b>Вопросы, в которых были ошибки: ${list.length}</b><span class="spacer"></span>
+    <button class="primary" id="drill" ${active.length ? '' : 'disabled'}>Повторить ещё не выученные (${active.length})</button></div>
+    <p class="muted small">Вопрос уходит из «не выученных», когда вы ответите на него верно 3 раза подряд.</p></div>`;
+  html += `<div class="card">` + (list.length ? list.map(x => `<div class="list-item">
+      <div class="row small muted"><span class="pill">${SUBJECTS.find(s => s.key === x.k).ru} · №${esc(x.q.id)}</span>
+      <span>ошибок: ${x.c.wrong}, верно: ${x.c.right}</span>${x.c.box >= 3 ? '<span class="pill" style="color:var(--ok)">выучено</span>' : ''}</div>
+      <div lang="ka"><b>${esc(x.q.q)}</b></div>${x.q.q_ru ? `<div class="ru">${esc(x.q.q_ru)}</div>` : ''}
+      <div class="small">✓ <span lang="ka">${esc(x.q.a[x.q.c])}</span>${x.q.a_ru && x.q.a_ru[x.q.c] ? ` <span class="muted">— ${esc(x.q.a_ru[x.q.c])}</span>` : ''}</div>
+    </div>`).join('') : '<span class="muted">Ошибок пока нет.</span>') + `</div>`;
+  view.innerHTML = html;
+  const d = document.getElementById('drill');
+  if (d) d.onclick = () => startMistakes(active.map(x => ({k:x.k, q:x.q})));
+}
+
+// ---------- browse ----------
+let browseSubj = 'language', browseFilter = '';
+function browse(){
+  setTab('browse'); header();
+  const list = (Q[browseSubj] || []).filter(q => !browseFilter ||
+    [q.q, q.q_ru, ...q.a, ...(q.a_ru || [])].join(' ').toLowerCase().includes(browseFilter.toLowerCase()));
+  view.innerHTML = `<div class="card">
+    <div class="row">${SUBJECTS.map(s => `<button data-s="${s.key}" class="${s.key === browseSubj ? 'on' : ''}">${s.ru}</button>`).join('')}</div>
+    <input id="flt" placeholder="Поиск (по-грузински или по-русски)" value="${esc(browseFilter)}" style="margin-top:10px;width:100%;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)">
+    <div class="muted small" style="margin-top:6px">Показано: ${list.length}</div></div>
+    <div class="card">${list.map(q => {
+      const c = S.cards[uid(browseSubj, q)];
+      return `<div class="list-item">
+      <div class="row small muted"><span class="pill">№${esc(q.id)}</span>${c && c.seen ? `<span>верно ${c.right} / ошибок ${c.wrong}</span>` : '<span>ещё не отвечали</span>'}</div>
+      <div lang="ka"><b>${esc(q.q)}</b></div>${ruBlock(q.q_ru, S.settings.alwaysRu)}
+      <ol class="small" style="margin:6px 0 0;padding-left:20px">${q.a.map((a, j) => `<li style="${j === q.c ? 'color:var(--ok);font-weight:600' : ''}"><span lang="ka">${esc(a)}</span>${q.a_ru && q.a_ru[j] ? `<span class="ru-inline ${S.settings.alwaysRu ? '' : 'hidden'} muted"> — ${esc(q.a_ru[j])}</span>` : ''}</li>`).join('')}</ol>
+    </div>`;}).join('') || '<span class="muted">Нет вопросов.</span>'}</div>`;
+  view.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { browseSubj = b.dataset.s; browse(); });
+  const f = document.getElementById('flt');
+  f.oninput = () => { browseFilter = f.value; clearTimeout(f._t); f._t = setTimeout(() => { browse(); const g = document.getElementById('flt'); g.focus(); g.setSelectionRange(g.value.length, g.value.length); }, 250); };
+}
+
+// ---------- settings ----------
+function settings(){
+  setTab('settings'); header();
+  view.innerHTML = `<div class="card">
+    <b>Сессия</b>
+    <div class="row" style="margin-top:8px">Вопросов в ежедневной тренировке: <input type="number" id="daily" min="5" max="200" value="${S.settings.daily}"></div>
+  </div>
+  <div class="card">
+    <b>Резервная копия прогресса</b>
+    <p class="muted small">Прогресс хранится в этом браузере. Чтобы перенести его на другое устройство или не потерять при очистке браузера — скачайте файл и загрузите его там.</p>
+    <div class="row"><button id="exp">Скачать прогресс</button>
+      <label><button id="imp-btn">Загрузить прогресс…</button><input type="file" id="imp" accept=".json" class="hidden"></label></div>
+  </div>
+  <div class="card">
+    <b>Импорт вопросов</b>
+    <p class="muted small">JSON вида <code>{"language":[{"id":"1","q":"…","a":["…","…"],"c":0,"q_ru":"…","a_ru":["…"]}],"history":[…],"law":[…]}</code>. Заменит встроенные вопросы только в этом браузере.</p>
+    <div class="row"><button id="qimp-btn">Загрузить вопросы…</button><input type="file" id="qimp" accept=".json" class="hidden">
+      <button id="qreset">Вернуть встроенные</button></div>
+  </div>
+  <div class="card">
+    <b>Сброс</b>
+    <div class="row" style="margin-top:8px"><button id="reset">Стереть весь прогресс</button></div>
+  </div>`;
+  document.getElementById('daily').onchange = e => { S.settings.daily = Math.max(5, Math.min(200, +e.target.value || 20)); save(); };
+  document.getElementById('exp').onclick = () => {
+    const blob = new Blob([JSON.stringify(S, null, 1)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'progress-' + today() + '.json'; a.click();
+  };
+  document.getElementById('imp-btn').onclick = () => document.getElementById('imp').click();
+  document.getElementById('imp').onchange = async e => {
+    try { const d = JSON.parse(await e.target.files[0].text()); if (!d.cards) throw 0; S = d; save(); alert('Прогресс загружен'); home(); }
+    catch { alert('Не получилось прочитать файл'); }
+  };
+  document.getElementById('qimp-btn').onclick = () => document.getElementById('qimp').click();
+  document.getElementById('qimp').onchange = async e => {
+    try { const d = JSON.parse(await e.target.files[0].text()); localStorage.setItem(STORE_KEY + '-questions', JSON.stringify(d)); location.reload(); }
+    catch { alert('Не получилось прочитать файл'); }
+  };
+  document.getElementById('qreset').onclick = () => { try { localStorage.removeItem(STORE_KEY + '-questions'); } catch {} location.reload(); };
+  document.getElementById('reset').onclick = () => { if (confirm('Точно стереть весь прогресс?')) { S = {cards:{}, days:{}, settings:S.settings}; save(); home(); } };
+}
+
+// ---------- translate selection ----------
+const pop = document.getElementById('tr-pop');
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection(), t = sel && sel.toString().trim();
+  if (!t || !/[Ⴀ-ჿ]/.test(t)) { pop.style.display = 'none'; return; }
+  const r = sel.getRangeAt(0).getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.left = Math.max(8, Math.min(innerWidth - 220, r.left)) + 'px';
+  pop.style.top = (r.bottom + 8 > innerHeight - 50 ? r.top - 44 : r.bottom + 8) + 'px';
+  pop.onclick = () => window.open(gt(t), '_blank', 'noopener');
+});
+
+// ---------- init ----------
+try { const custom = JSON.parse(localStorage.getItem(STORE_KEY + '-questions')); if (custom) Object.assign(Q, custom); } catch {}
+document.getElementById('tabs').onclick = e => {
+  const v = e.target.dataset.view; if (!v) return;
+  ({home, browse, mistakes, settings})[v]();
+};
+document.getElementById('ru-toggle').onclick = () => {
+  S.settings.alwaysRu = !S.settings.alwaysRu; save(); header();
+  view.querySelectorAll('.ru, .ru-inline').forEach(e => e.classList.toggle('hidden', !S.settings.alwaysRu));
+};
+document.getElementById('theme-toggle').onclick = () => {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur = S.settings.theme || (dark ? 'dark' : 'light');
+  S.settings.theme = cur === 'dark' ? 'light' : 'dark'; save(); applyTheme();
+};
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const opts = [...view.querySelectorAll('.opt:not(:disabled)')];
+  if (/^[1-9]$/.test(e.key) && opts[e.key - 1]) opts[e.key - 1].click();
+  const nb = document.getElementById('nextq');
+  if (e.key === 'Enter' && nb && !nb.classList.contains('hidden') && document.activeElement !== nb) nb.click();
+});
+applyTheme();
+home();
+})();
+</script>
+</body>
+</html>
